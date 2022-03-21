@@ -101,10 +101,10 @@ void TreeBuilder::create_layout_tree(DOM::Node& dom_node, TreeBuilder::Context& 
     if (is<DOM::Element>(dom_node)) {
         auto& element = static_cast<DOM::Element&>(dom_node);
         element.clear_pseudo_element_nodes({});
-        style = style_computer.compute_style(element);
+        VERIFY(!element.needs_style_update());
+        style = element.computed_css_values();
         if (style->display().is_none())
             return;
-        element.set_specified_css_values(style);
         layout_node = element.create_layout_node(*style);
     } else if (is<DOM::Document>(dom_node)) {
         style = style_computer.create_document_style();
@@ -224,11 +224,7 @@ void TreeBuilder::create_layout_tree(DOM::Node& dom_node, TreeBuilder::Context& 
 
 RefPtr<Node> TreeBuilder::build(DOM::Node& dom_node)
 {
-    if (dom_node.parent()) {
-        // We're building a partial layout tree, so start by building up the stack of parent layout nodes.
-        for (auto* ancestor = dom_node.parent()->layout_node(); ancestor; ancestor = ancestor->parent())
-            m_parent_stack.prepend(verify_cast<NodeWithStyle>(ancestor));
-    }
+    VERIFY(dom_node.is_document());
 
     Context context;
     create_layout_tree(dom_node, context);
@@ -263,8 +259,6 @@ void TreeBuilder::for_each_in_tree_with_inside_display(NodeWithStyle& root, Call
 
 void TreeBuilder::fixup_tables(NodeWithStyle& root)
 {
-    // NOTE: Even if we only do a partial build, we always do fixup from the root.
-
     remove_irrelevant_boxes(root);
     generate_missing_child_wrappers(root);
     generate_missing_parents(root);

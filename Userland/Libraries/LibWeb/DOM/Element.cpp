@@ -271,17 +271,17 @@ void Element::recompute_style()
 {
     set_needs_style_update(false);
     VERIFY(parent());
-    auto new_specified_css_values = document().style_computer().compute_style(*this);
+    auto new_computed_css_values = document().style_computer().compute_style(*this);
 
-    if (m_specified_css_values && *m_specified_css_values == *new_specified_css_values)
+    if (m_computed_css_values && *m_computed_css_values == *new_computed_css_values)
         return;
 
-    m_specified_css_values = move(new_specified_css_values);
+    m_computed_css_values = move(new_computed_css_values);
 
     document().invalidate_layout();
 }
 
-NonnullRefPtr<CSS::StyleProperties> Element::computed_style()
+NonnullRefPtr<CSS::StyleProperties> Element::resolved_css_values()
 {
     auto element_computed_style = CSS::ResolvedCSSStyleDeclaration::create(*this);
     auto properties = CSS::StyleProperties::create();
@@ -382,7 +382,11 @@ void Element::set_shadow_root(RefPtr<ShadowRoot> shadow_root)
 {
     if (m_shadow_root == shadow_root)
         return;
+    if (m_shadow_root)
+        m_shadow_root->set_host(nullptr);
     m_shadow_root = move(shadow_root);
+    if (m_shadow_root)
+        m_shadow_root->set_host(this);
     invalidate_style();
 }
 

@@ -176,10 +176,20 @@ void Node::set_node_value(const String& value)
 
 void Node::invalidate_style()
 {
-    for_each_in_inclusive_subtree_of_type<Element>([&](auto& element) {
-        element.set_needs_style_update(true);
+    for_each_in_inclusive_subtree([&](Node& node) {
+        node.m_needs_style_update = true;
+        if (node.has_children())
+            node.m_child_needs_style_update = true;
+        if (auto* shadow_root = node.is_element() ? static_cast<DOM::Element&>(node).shadow_root() : nullptr) {
+            node.m_child_needs_style_update = true;
+            shadow_root->m_needs_style_update = true;
+            if (shadow_root->has_children())
+                shadow_root->m_child_needs_style_update = true;
+        }
         return IterationDecision::Continue;
     });
+    for (auto* ancestor = parent_or_shadow_host(); ancestor; ancestor = ancestor->parent_or_shadow_host())
+        ancestor->m_child_needs_style_update = true;
     document().schedule_style_update();
 }
 
@@ -334,6 +344,8 @@ void Node::insert_before(NonnullRefPtr<Node> node, RefPtr<Node> child, bool supp
     }
 
     children_changed();
+
+    document().invalidate_style();
 }
 
 // https://dom.spec.whatwg.org/#concept-node-pre-insert
@@ -616,7 +628,7 @@ void Node::set_needs_style_update(bool value)
     m_needs_style_update = value;
 
     if (m_needs_style_update) {
-        for (auto* ancestor = parent(); ancestor; ancestor = ancestor->parent()) {
+        for (auto* ancestor = parent_or_shadow_host(); ancestor; ancestor = ancestor->parent_or_shadow_host()) {
             ancestor->m_child_needs_style_update = true;
         }
         document().schedule_style_update();
@@ -701,7 +713,14 @@ u16 Node::compare_document_position(RefPtr<Node> other)
 // https://dom.spec.whatwg.org/#concept-tree-host-including-inclusive-ancestor
 bool Node::is_host_including_inclusive_ancestor_of(const Node& other) const
 {
-    return is_inclusive_ancestor_of(other) || (is<DocumentFragment>(other.root()) && verify_cast<DocumentFragment>(other.root()).host() && is_inclusive_ancestor_of(*verify_cast<DocumentFragment>(other.root()).host().ptr()));
+    if (is_inclusive_ancestor_of(other))
+        return true;
+    if (is<DocumentFragment>(other.root())
+        && static_cast<DocumentFragment const&>(other.root()).host()
+        && is_inclusive_ancestor_of(*static_cast<DocumentFragment const&>(other.root()).host())) {
+        return true;
+    }
+    return false;
 }
 
 // https://dom.spec.whatwg.org/#dom-node-ownerdocument
